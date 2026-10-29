@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoC War Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{background:#171330;color:#ece8ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  .display{font-family:"Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;letter-spacing:.02em}
+  .gold{background:linear-gradient(#ffd75e,#e8a21a);color:#3a2300}
+  input{background:#241d4a;border:2px solid #3b3270;color:#fff}
+  input:focus{outline:none;border-color:#ffd75e}
+  .panel{background:#211b44;border:2px solid #362d68;border-radius:14px}
+</style>
+</head>
+<body class="min-h-screen">
+<main class="max-w-xl mx-auto p-4 pb-16">
+  <h1 class="display text-3xl text-[#ffd75e] mt-4">War Tracker</h1>
+  <p class="text-sm text-[#a79fd6] mb-4">Tingnan ang kasalukuyang clan war at kung sino ang hindi pa nag-aattack.</p>
+
+  <form id="form" class="flex gap-2 mb-4">
+    <input id="tag" type="text" autocapitalize="characters" autocomplete="off" placeholder="Clan tag, hal. #2PP" class="flex-1 min-w-0 rounded-lg px-3 py-2">
+    <button class="gold display rounded-lg px-5 py-2" type="submit">Tingnan</button>
+  </form>
+
+  <div id="out" aria-live="polite"></div>
+</main>
+
+<script>
+const TOKEN = "PASTE_TOKEN_DITO"; // ilagay dito ang token na para sa 45.79.218.79
+const BASE = "https://cocproxy.royaleapi.dev/v1";
+const $ = (id) => document.getElementById(id);
+const out = $("out");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const msg = (t) => `<p class="panel p-4 text-sm">${esc(t)}</p>`;
+
+const parseT = (s) => new Date(s.replace(/(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)\.\d+Z/, "$1-$2-$3T$4:$5:$6Z"));
+function left(ms) {
+  if (ms <= 0) return "tapos na";
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000);
+  return `${h}h ${m}m`;
+}
+
+function side(c) {
+  return `<div class="flex-1 text-center min-w-0">
+    <div class="truncate text-sm text-[#a79fd6]">${esc(c.name)}</div>
+    <div class="display text-3xl text-[#ffd75e]">${c.stars}★</div>
+    <div class="text-xs">${(c.destructionPercentage ?? 0).toFixed(1)}% · ${c.attacks} attacks</div>
+  </div>`;
+}
+
+function show(w) {
+  if (w.state === "notInWar") { out.innerHTML = msg("Walang war ang clan na ito ngayon."); return; }
+  const per = w.attacksPerMember || 2;
+  const isPrep = w.state === "preparation";
+  const target = parseT(isPrep ? w.startTime : w.endTime);
+  const label = { preparation: "Preparation", inWar: "Battle day", warEnded: "Tapos na" }[w.state] || w.state;
+  const timeText = w.state === "warEnded" ? "Tapos na ang war" : `${isPrep ? "Magsisimula sa" : "Matatapos sa"} ${left(target - Date.now())}`;
+
+  const members = [...w.clan.members].sort((a, b) => a.mapPosition - b.mapPosition);
+  const missing = members.filter(m => (m.attacks?.length || 0) < per).length;
+  const rows = members.map(m => {
+    const used = m.attacks?.length || 0;
+    const stars = (m.attacks || []).reduce((n, a) => n + a.stars, 0);
+    const warn = !isPrep && used < per;
+    return `<li class="flex items-center justify-between gap-2 py-1.5">
+      <span class="truncate">${m.mapPosition}. ${esc(m.name)} <span class="text-[#a79fd6]">TH${m.townhallLevel}</span></span>
+      <span class="shrink-0 ${warn ? "text-[#ff8a7a]" : "text-[#a79fd6]"}">${isPrep ? "" : `${used}/${per} · ${stars}★`}</span>
+    </li>`;
+  }).join("");
+
+  out.innerHTML = `
+    <section class="panel p-4 mb-4">
+      <div class="flex justify-between text-sm text-[#a79fd6] mb-2"><span>${esc(label)} · ${w.teamSize}v${w.teamSize}</span><span>${esc(timeText)}</span></div>
+      <div class="flex items-center gap-2">${side(w.clan)}<span class="display text-[#a79fd6]">vs</span>${side(w.opponent)}</div>
+    </section>
+    <section class="panel p-4">
+      <h2 class="display text-lg mb-1">Members ${isPrep ? "" : `<span class="text-sm text-[#ff8a7a]">${missing} ang kulang pa sa attack</span>`}</h2>
+      <ul class="divide-y divide-[#362d68] text-sm">${rows}</ul>
+    </section>`;
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const tag = $("tag").value.trim().toUpperCase().replace(/^#/, "").replace(/O/g, "0");
+  if (TOKEN === "PASTE_TOKEN_DITO") { out.innerHTML = msg("Ilagay muna ang token sa code (hanapin ang PASTE_TOKEN_DITO)."); return; }
+  if (!tag) { out.innerHTML = msg("Ilagay ang clan tag."); return; }
+  out.innerHTML = msg("Naghahanap...");
+  try {
+    const res = await fetch(`${BASE}/clans/${encodeURIComponent("#" + tag)}/currentwar`, { headers: { Authorization: "Bearer " + TOKEN } });
+    if (res.status === 404) return void (out.innerHTML = msg("Hindi nahanap ang clan. I-check ang tag."));
+    if (res.status === 403) return void (out.innerHTML = msg("Hindi ma-access. Posibleng private ang war log ng clan, o mali ang Allowed IP ng key (dapat 45.79.218.79)."));
+    if (!res.ok) return void (out.innerHTML = msg("May error: " + res.status));
+    show(await res.json());
+  } catch (err) {
+    out.innerHTML = msg("Hindi makakonekta. I-check ang internet mo at subukan ulit.");
+  }
+});
+</script>
+</body>
+</html>
