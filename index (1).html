@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoC Stats</title>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{background:#171330;color:#ece8ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  .display{font-family:"Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;letter-spacing:.02em}
+  .gold{background:linear-gradient(#ffd75e,#e8a21a);color:#3a2300}
+  input{background:#241d4a;border:2px solid #3b3270;color:#fff}
+  input:focus{outline:none;border-color:#ffd75e}
+  .panel{background:#211b44;border:2px solid #362d68;border-radius:14px}
+  .tab[aria-selected="true"]{background:#ffd75e;color:#3a2300}
+</style>
+</head>
+<body class="min-h-screen">
+<main class="max-w-xl mx-auto p-4 pb-16">
+  <h1 class="display text-3xl text-[#ffd75e] mt-4">CoC Stats</h1>
+  <p class="text-sm text-[#a79fd6] mb-4">Player, clan, at war stats mula sa official API.</p>
+
+  <div role="tablist" class="flex gap-2 mb-3">
+    <button class="tab display flex-1 rounded-lg py-2 bg-[#2c2458]" role="tab" aria-selected="true" data-mode="player">Player</button>
+    <button class="tab display flex-1 rounded-lg py-2 bg-[#2c2458]" role="tab" aria-selected="false" data-mode="clan">Clan</button>
+    <button class="tab display flex-1 rounded-lg py-2 bg-[#2c2458]" role="tab" aria-selected="false" data-mode="war">War</button>
+  </div>
+
+  <form id="form" class="flex gap-2 mb-4">
+    <input id="tag" type="text" autocapitalize="characters" autocomplete="off" placeholder="Player tag, hal. #GV2Y9JRUU" class="flex-1 min-w-0 rounded-lg px-3 py-2">
+    <button class="gold display rounded-lg px-5 py-2" type="submit">Hanapin</button>
+  </form>
+
+  <div id="out" aria-live="polite"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const out = $("out");
+let mode = "player";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const msg = (t) => `<p class="panel p-4 text-sm">${esc(t)}</p>`;
+const stat = (l, v) => `<div class="rounded-lg bg-[#2a2355] px-3 py-2"><div class="text-xs text-[#a79fd6]">${esc(l)}</div><div class="display text-xl">${esc(v)}</div></div>`;
+const hint = { player: "Player tag, hal. #GV2Y9JRUU", clan: "Clan tag, hal. #2PP", war: "Clan tag, hal. #2PP" };
+
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t === b));
+  $("tag").placeholder = hint[mode];
+  out.innerHTML = "";
+}));
+
+function showPlayer(d) {
+  const heroes = (d.heroes || []).filter(h => h.village === "home")
+    .map(h => `<li class="flex justify-between py-1"><span>${esc(h.name)}</span><span>${h.level} / ${h.maxLevel}</span></li>`).join("");
+  out.innerHTML = `<section class="panel p-4">
+    <h2 class="display text-2xl">${esc(d.name)} <span class="text-sm text-[#a79fd6]">${esc(d.tag)}</span></h2>
+    <p class="text-sm text-[#a79fd6] mb-3">${d.clan ? "Clan: " + esc(d.clan.name) : "Walang clan"}</p>
+    <div class="grid grid-cols-2 gap-2">${stat("Town Hall", d.townHallLevel)}${stat("Trophies", d.trophies)}${stat("War stars", d.warStars)}${stat("Best trophies", d.bestTrophies)}</div>
+    ${heroes ? `<h3 class="display text-lg mt-4 mb-1">Heroes</h3><ul class="divide-y divide-[#362d68] text-sm">${heroes}</ul>` : ""}
+  </section>`;
+}
+
+function showClan(d) {
+  const members = (d.memberList || []).map(m =>
+    `<li class="flex justify-between py-1.5 gap-2"><span class="truncate">${m.clanRank}. ${esc(m.name)}</span><span class="shrink-0 text-[#a79fd6]">TH${m.townHallLevel} · ${m.trophies}</span></li>`).join("");
+  out.innerHTML = `<section class="panel p-4">
+    <h2 class="display text-2xl">${esc(d.name)} <span class="text-sm text-[#a79fd6]">${esc(d.tag)}</span></h2>
+    <p class="text-sm text-[#a79fd6] mb-3">${esc(d.description)}</p>
+    <div class="grid grid-cols-2 gap-2">${stat("Level", d.clanLevel)}${stat("Members", d.members + " / 50")}${stat("War wins", d.warWins)}${stat("Points", d.clanPoints)}</div>
+    <h3 class="display text-lg mt-4 mb-1">Members</h3>
+    <ul class="divide-y divide-[#362d68] text-sm">${members}</ul>
+  </section>`;
+}
+
+const parseT = (s) => new Date(s.replace(/(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)\.\d+Z/, "$1-$2-$3T$4:$5:$6Z"));
+const left = (ms) => ms <= 0 ? "tapos na" : `${Math.floor(ms / 3600000)}h ${Math.floor(ms % 3600000 / 60000)}m`;
+const side = (c) => `<div class="flex-1 text-center min-w-0"><div class="truncate text-sm text-[#a79fd6]">${esc(c.name)}</div><div class="display text-3xl text-[#ffd75e]">${c.stars}★</div><div class="text-xs">${(c.destructionPercentage ?? 0).toFixed(1)}% · ${c.attacks} attacks</div></div>`;
+
+function showWar(w) {
+  if (w.state === "notInWar") { out.innerHTML = msg("Walang war ang clan na ito ngayon."); return; }
+  const per = w.attacksPerMember || 2;
+  const prep = w.state === "preparation";
+  const label = { preparation: "Preparation", inWar: "Battle day", warEnded: "Tapos na" }[w.state] || w.state;
+  const timeText = w.state === "warEnded" ? "Tapos na ang war" : `${prep ? "Magsisimula sa" : "Matatapos sa"} ${left(parseT(prep ? w.startTime : w.endTime) - Date.now())}`;
+  const members = [...w.clan.members].sort((a, b) => a.mapPosition - b.mapPosition);
+  const missing = members.filter(m => (m.attacks?.length || 0) < per).length;
+  const rows = members.map(m => {
+    const used = m.attacks?.length || 0, stars = (m.attacks || []).reduce((n, a) => n + a.stars, 0);
+    return `<li class="flex items-center justify-between gap-2 py-1.5"><span class="truncate">${m.mapPosition}. ${esc(m.name)} <span class="text-[#a79fd6]">TH${m.townhallLevel}</span></span><span class="shrink-0 ${!prep && used < per ? "text-[#ff8a7a]" : "text-[#a79fd6]"}">${prep ? "" : `${used}/${per} · ${stars}★`}</span></li>`;
+  }).join("");
+  out.innerHTML = `<section class="panel p-4 mb-4">
+      <div class="flex justify-between text-sm text-[#a79fd6] mb-2"><span>${esc(label)} · ${w.teamSize}v${w.teamSize}</span><span>${esc(timeText)}</span></div>
+      <div class="flex items-center gap-2">${side(w.clan)}<span class="display text-[#a79fd6]">vs</span>${side(w.opponent)}</div>
+    </section>
+    <section class="panel p-4"><h2 class="display text-lg mb-1">Members ${prep ? "" : `<span class="text-sm text-[#ff8a7a]">${missing} ang kulang pa sa attack</span>`}</h2>
+    <ul class="divide-y divide-[#362d68] text-sm">${rows}</ul></section>`;
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const tag = $("tag").value.trim().toUpperCase().replace(/^#/, "").replace(/O/g, "0");
+  if (!tag) { out.innerHTML = msg("Ilagay ang tag."); return; }
+  out.innerHTML = msg("Naghahanap...");
+  try {
+    const res = await fetch(`/api/${mode}/${encodeURIComponent(tag)}`);
+    if (res.status === 404) return void (out.innerHTML = msg("Hindi nahanap ang tag. I-check kung tama."));
+    if (res.status === 403) return void (out.innerHTML = msg(mode === "war" ? "Hindi ma-access. Posibleng private ang war log ng clan." : "Hindi tinanggap ng API ang request. I-check ang token at ang Allowed IP ng key."));
+    if (res.status === 500) return void (out.innerHTML = msg("Wala pang token sa server. Ilagay ang COC_TOKEN sa Render."));
+    if (!res.ok) return void (out.innerHTML = msg("May error: " + res.status));
+    const data = await res.json();
+    ({ player: showPlayer, clan: showClan, war: showWar })[mode](data);
+  } catch (err) {
+    out.innerHTML = msg("Hindi makakonekta. I-check ang internet mo at subukan ulit.");
+  }
+});
+</script>
+</body>
+</html>
